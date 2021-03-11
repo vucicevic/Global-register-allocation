@@ -14,102 +14,106 @@
     using namespace std;
 
 
-    void yyerror(string s) {
-        cerr<<s<<endl;
+    void yyerror(string error_msg) {
+        cerr << error_msg << endl;
         exit(EXIT_FAILURE);
     }
     
     extern int yylex();
     
     
-    #include "naredba.hpp"
+    #include "statement.hpp"
     
-    vector<Naredba*> naredbe;
+    // colection of statements
+    vector<Stmt*> statements;
     
 %}
 
-%token  if_token goto_token dodela_token return_token
+%token if_token goto_token assign_token return_token
 %token <s> id_token function_token relop_token
-%token <d> num_token
+%token <i> num_token
 
-%type <t> E
-%type <i> Izraz Uslov
-%type <n> Naredba Dodela
+%type <t>   T
+%type <e>   Expr Cond
+%type <stm> Statement Assign
 
 %left relop_token
 %left '+' '-'
 %left '*' '/'
 
 %union{
-
-    Tip* t;
-    Izraz* i;
+    // class types
+    Term* t;
+    Expression* e;
+    Stmt* stm;
     string* s;
-    int d;
-    Naredba* n;
+    
+    // non-class types
+    int i;
 }
 
 %%
 
-Program : Program Naredba '\n' {}
-|         Naredba '\n' {}
+Program : Program num_token Statement '\n'                  {}
+|         num_token Statement '\n'                          {}
 ;
-Naredba : num_token Dodela                                  { $$ = $2; naredbe.push_back($$); }
-|         num_token if_token Uslov goto_token num_token     { $$ = new IfGo($3,$5);naredbe.push_back($$); }
-|         num_token goto_token num_token                    { $$ = new GoTo($3);naredbe.push_back($$); }
-|         num_token return_token id_token                   { $$ = new Return(*$3); delete $3;naredbe.push_back($$); }
+Statement : Assign                                          { $$ = $1;               statements.push_back($$);             }
+|         if_token Cond goto_token num_token                { $$ = new IfGo($2,$4);  statements.push_back($$);             }
+|         goto_token num_token                              { $$ = new GoTo($2);     statements.push_back($$);             }
+|         return_token id_token                             { $$ = new Return(*$2);  statements.push_back($$);  delete $2; }
 ;
-Dodela: id_token dodela_token Izraz                    { $$ = new Dodela(*$1,$3); delete $1;                }
-|       id_token dodela_token function_token '(' E ')' { $$ = new DodelaF(*$1,*$3,$5); delete $1;delete $3; }
+Assign  : id_token assign_token Expr                        { $$ = new Assign(*$1,$3);       delete $1;             }
+|         id_token assign_token function_token '(' T ')'    { $$ = new AssignF(*$1,*$3,$5);  delete $1;  delete $3; }
 ;
-Izraz : E '+' E     { $$ = new Binarni($1,"+",$3); }
-|       E '-' E     { $$ = new Binarni($1,"-",$3); }
-|       E '*' E     { $$ = new Binarni($1,"*",$3); }
-|       E '/' E     { $$ = new Binarni($1,"/",$3); }
-|       E           { $$ = new Jednoclan($1);      }
+Expr    : T '+' T                                           { $$ = new Binary($1,"+",$3); }
+|         T '-' T                                           { $$ = new Binary($1,"-",$3); }
+|         T '*' T                                           { $$ = new Binary($1,"*",$3); }
+|         T '/' T                                           { $$ = new Binary($1,"/",$3); }
+|         T                                                 { $$ = new Unary($1);         }
 ;
-Uslov : E relop_token E {$$ = new Binarni($1,*$2,$3); delete $2;}
+Cond    : T relop_token T                                   { $$ = new Binary($1,*$2,$3);  delete $2; }
 ;
-E : id_token    { $$ = new Id(*$1); delete $1; }
-|   num_token   { $$ = new Num($1);            }
+T       : id_token                                          { $$ = new Id(*$1);  delete $1; }
+|         num_token                                         { $$ = new Num($1);             }
 ;
 
 %%
 
-extern void insOuts(vector<set<string>>& in, vector<set<string>>& out, const vector<set<string>>& use, const vector<set<string>>& def, const vector<set<unsigned>>& sledbenici);
+void insOuts(vector<set<string>>& in, vector<set<string>>& out, const vector<set<string>>& use, const vector<set<string>>& def, const vector<set<unsigned>>& next);
 
-extern map<string,set<string>> build (const vector<set<string>>&in, const vector<set<string>>& out);
+map<string,set<string>> build (const vector<set<string>>&in, const vector<set<string>>& out);
 
-extern void simplify_spill(map<string,set<string>>& mapa, stack<string>& stek, const unsigned& broj_registara); 
+void simplify_spill(map<string,set<string>>& graph, stack<string>& var_stack, const unsigned num_of_regs); 
 
-extern void select(map<string,unsigned>& preslikavanje,stack<string>& stek,const map<string,set<string>>& mapa_interferencije, const set<unsigned>& registri, set<string>& prosute_promenljive);
+void select(map<string,unsigned>& mapping,stack<string>& var_stack,const map<string,set<string>>& graph, const set<unsigned>& registers, set<string>& spilled_vars);
 
-extern void mrtavKod(vector<Naredba*>& naredbe, vector<set<string>>& out, vector<set<string>>& in);
+void deadCode(vector<Stmt*>& statements, vector<set<string>>& in, vector<set<string>>& out);
 
-extern void azuriraj(const vector<bool>& pre, const vector<bool>& posle, vector<Naredba*> naredbe);
+void updateLS(const vector<unsigned>& before, const vector<unsigned>& after, vector<Stmt*> statements);
 
+void printStmts(const string& message, const vector<Stmt*>& statements);
 
 int main (int argc, char** argv) {
 
     extern FILE* yyin;
     
-    unsigned broj_registara;
+    unsigned num_of_regs;
     
-    if(3!=argc){
+    if(3 != argc){
     
-        cerr<<"Pogrešan broj argumenata komandne linije"<<endl;
-        cout<<"Program se poziva sa : ./GRA putanja_do_fajla broj_registara"<<endl;
+        cerr << "Wrong number of args" << endl;
+        cout << "Usage : ./GRA file_path number_of_registers" << endl;
         exit(EXIT_FAILURE);
     }
     else{
         
-        FILE* ulaz = fopen(argv[1],"r");
-        if(ulaz==nullptr){
-            cerr<<"Greška pri otvaranju datoteke za čitanje"<<endl;
+        FILE* in = fopen(argv[1],"r");
+        if(nullptr == in){
+            cerr << "Opening of the in file failed" << endl;
             exit(EXIT_FAILURE);
         }
-        broj_registara = atoi(argv[2]);
-        yyin = ulaz;
+        num_of_regs = atoi(argv[2]);
+        yyin = in;
     }
     
     //yydebug = 1;
@@ -118,179 +122,130 @@ int main (int argc, char** argv) {
     yyparse();
     fclose(yyin);
     
-    cout<<"\t"<<"Originalni program"<<endl;
-    cout<<endl;
-    for(unsigned i=0;i<naredbe.size();i++){
-        cout<<i<<"\t";
-        naredbe[i]->ispisi();
-    }
+    printStmts("Original code",statements);
     
-    cout<<endl;
-    cout<<"-------------------------------------------"<<endl;
+    bool first_pass = true;
+    bool allocated = false;
     
-    bool prvi_prolaz = true;
-    bool obojen = false;
+    // register set : [1,num_of_regs]
+    set<unsigned> registers;
+    for(unsigned i = 1 ; i <= num_of_regs ; i++)
+        registers.insert(i);
     
-    // pravimo skup registara [1,broj_registara]
-    set<unsigned> registri;
-    for(unsigned i=1;i<=broj_registara;i++)
-        registri.insert(i);
+    // set holding spilled variables (for each of them we made Load and Store)
+    set<string> actually_spilled;
     
-    set<string> prosute_promenljive;
-    
-    /*  vrtimo petlju dok ne alociramo registre ili iskačemo iz nje ako 
-        utvrdimo da se promenljive ne mogu smestiti u željeni broj registara
-    */
-    while(!obojen) {
+    // starting the algorithm
+    while(!allocated) {
         
-        // određujemo sledbenike, use i def svake naredbe
-        vector<set<string>> use(naredbe.size());
-        vector<set<string>> def(naredbe.size());
-        vector<set<unsigned>> sledbenici(naredbe.size());
-        for(unsigned i=0;i<naredbe.size();i++){
-            use[i]=naredbe[i]->use();
-            def[i]=naredbe[i]->def();
-            sledbenici[i] = naredbe[i]->next(i,naredbe.size()-1);
+        // determine use, def and follow and then calculate IN and OUT sets
+        vector<set<string>> use(statements.size());
+        vector<set<string>> def(statements.size());
+        vector<set<unsigned>> follow(statements.size());
+        
+        for(unsigned i = 0 ; i < statements.size() ; i++){
+            use[i] = statements[i]->use();
+            def[i] = statements[i]->def();
+            follow[i] = statements[i]->follow(i,statements.size()-1);
         }
+
+        vector<set<string>> in(statements.size());
+        vector<set<string>> out(statements.size());
+        insOuts(in,out,use,def,follow);
         
-        // određujemo IN i OUT svake naredbe
-        vector<set<string>> in(naredbe.size());
-        vector<set<string>> out(naredbe.size());
-        insOuts(in,out,use,def,sledbenici);
-        use.erase(use.begin(),use.end());
-        def.erase(def.begin(),def.end());
-        sledbenici.erase(sledbenici.begin(),sledbenici.end());
+        // since we have IN and OUT sets we can eliminate dead code (this is done only once!)
+        if(first_pass) {
+            first_pass = false;
+            
+            unsigned stmt_num_before = statements.size();
+            deadCode(statements,in,out);
+            unsigned stmt_num_after = statements.size();
         
+            if(stmt_num_after != stmt_num_before) 
+                printStmts("After removing dead code",statements);
+        }
+    
+        // Build - get interference graph 
+        map<string,set<string>> graph = build(in,out);
         
-        /* 
-            ukoliko prvi put prolazimo kroz petlju oslobađamo se mrtvog koda (ako ga ima)
-            i prikazujemo ažuriran program
-        */
-        if(prvi_prolaz) {
+        // Simplify and spill - get variable stack
+        map<string,set<string>> graph_cpy(graph);
+        stack<string> var_stack;
+        simplify_spill(graph_cpy,var_stack,num_of_regs);
+        
+        // mapping : variable -> register (all 0 for now)
+        map<string,unsigned> mapping;
+        for(auto it = graph.begin() ; it != graph.end() ; it++)
+            mapping[it->first] = 0;
+    
+        // Select - trying to find register for each variable
+        set<string> spilled_vars;
+        select(mapping,var_stack,graph,registers,spilled_vars);
+        
+        // if something is spilled we need to create Load and Store instructions and repeat
+        if(!spilled_vars.empty()){
+        
+            // finding variable with highest cardinality (here we should use some sort of heuristic)
+            map<unsigned,set<string>> var_cardinality;
+            for(auto it = spilled_vars.begin() ; it != spilled_vars.end() ; it++)
+                if(actually_spilled.find(*it) == actually_spilled.end())
+                    var_cardinality[graph[*it].size()].insert(*it);
             
             
-            unsigned broj_naredbi_pre = naredbe.size();
-            // brišemo dodele koje se ne koriste i ažuriramo skokove
-            mrtavKod(naredbe,out,in);
-            unsigned broj_naredbi_posle = naredbe.size();
+            // if var_cardinality map is empty => we need to spill already spilled variable
+            // and we can't do that therefore we can't allocate registers and we exit
+            if(var_cardinality.empty()){
+                cout << "Allocation isn't possible.. Number of regs is low.. Try again" << endl;
+                break;
+            }
+            
+            // if var_cardinality is not empty => spill variable (create Load and Store for it)
+            auto it = --var_cardinality.end();
+            string spilled = *it->second.begin();
+            actually_spilled.insert(spilled);
+            
+            vector<Stmt*> new_statements;
+            
+            // used for updating jumps
+            vector<unsigned> before(statements.size(),0);
+            vector<unsigned> after(statements.size(),0);
         
-            if(broj_naredbi_pre != broj_naredbi_posle) {
-                cout<<"\t"<<"Program posle eliminacije mrtvog koda"<<endl;
-                cout<<endl;
+            // adding Load and Store
+            for(unsigned i = 0 ; i < statements.size() ; i++){
+                set<string> use = statements[i]->use();
+                set<string> def = statements[i]->def();
                 
-                for(unsigned i=0;i<naredbe.size();i++){
-                    cout<<i<<"\t";
-                    naredbe[i]->ispisi();
+                if(use.find(spilled) != use.end()){
+                    new_statements.push_back(new Load(spilled));
+                    before[i]++;
                 }
-            
-                cout<<endl;
-                cout<<"-------------------------------------------"<<endl;
-            }   
-                prvi_prolaz = false;
-        }
-    
-        
-        // korak build - pravimo graf interferencije
-        map<string,set<string>> mapa_interferencije = build(in,out);
-        in.erase(in.begin(),in.end());
-        out.erase(out.begin(),out.end());
-        
-        // korak simplify i spill - pravimo stek promenljivih
-        map<string,set<string>> pomocna(mapa_interferencije);
-        stack<string> stek;
-        simplify_spill(pomocna,stek,broj_registara);
-        
-        // mapa koja nam čuva preslikavanja : promenljiva -> registar
-        map<string,unsigned> preslikavanje;
-        for(auto it=mapa_interferencije.begin();it!=mapa_interferencije.end();it++)
-            preslikavanje[it->first] = 0;
-    
-        
-        // korak select - dodeljujemo registre promenljivama i određujemo koje su stvarno prosute promenljive
-        set<string> prosute;
-        select(preslikavanje,stek,mapa_interferencije,registri,prosute);
-        
-        // ako ima prosutih onda moramo dodati naredbe pristupa memoriji i ponoviti sve
-        if(prosute.size()>0){
-        
-            // određujemo promenljivu najvećeg stepena i nju prosipamo
-            map<unsigned,set<string>> m;
-            for(auto it = prosute.begin();it!=prosute.end();it++)
-                if(prosute_promenljive.find(*it)==prosute_promenljive.end())
-                    m[mapa_interferencije[*it].size()].insert(*it);
-            
-            /*
-                ako imamo stvarno prosute promenljive i praznu mapu m to znači
-                da bismo trebali da prospemo već prosutu promenljivu što nikako 
-                ne možemo da uradimo => program se ne može smestiti u željeni broj registara
-            */
-            if(m.size()==0){
-                cout<<"Program se ne može smestiti u željeni broj registara"<<endl;
-                exit(EXIT_SUCCESS);
-            }
-            
-            auto it = m.end();
-            it--;
-            string prosuta = *(it->second.begin());
-            prosute_promenljive.insert(prosuta);
-            
-            
-            vector<Naredba*> nove_naredbe;
-            
-            // vektori koji nam pamte da li smo pre ili posle neke naredbe dodali Load, odnosno Store
-            vector<bool> pre(naredbe.size(),false);
-            vector<bool> posle(naredbe.size(),false);
-        
-            // menjamo program tako što dodajemo Load i Store naredbe gde je potrebno i ažuriramo vektore pre i posle
-            for(unsigned i=0;i<naredbe.size();i++){
-                set<string> use = naredbe[i]->use();
-                set<string> def = naredbe[i]->def();
-                
-                if(use.find(prosuta)!=use.end()){
-                    nove_naredbe.push_back(new Load(prosuta));
-                    pre[i] = true;
-                }
-                nove_naredbe.push_back(naredbe[i]);
-                if(def.find(prosuta)!=def.end()){
-                    nove_naredbe.push_back(new Store(prosuta));
-                    posle[i] = true;
+                new_statements.push_back(statements[i]);
+                if(def.find(spilled) != def.end()){
+                    new_statements.push_back(new Store(spilled));
+                    after[i]++;
                 }
             }
         
-            naredbe = nove_naredbe;
+            statements = new_statements;
             
-            // ažuriramo skokove nakon dodavanja naredbi Load i Store
-            azuriraj(pre,posle,naredbe);
+            // update jumps after adding Load and Store
+            updateLS(before,after,statements);
             
         }
+        else{ // if there isn't a spill, we allocated registers successfully
         
-        /* 
-            ako nemamo stvarno prosute promenljive znači da smo uspešno
-            alocirali registre za sve promenljive
-        */
-        else{
-        
-            obojen = true;
-            
-            // ispisujemo rezultat
-            cout<<"\t"<<"Program posle Globalne registarske alokacije"<<endl;
-            cout<<endl;
-            for(unsigned i=0;i<naredbe.size();i++){
-                cout<<i<<"\t";
-                naredbe[i]->ispisiRegistre(preslikavanje);
+            allocated = true;
+            cout << "\t" << "Code after Global register allocation" << endl << endl;
+            for(unsigned i = 0 ; i < statements.size() ; i++){
+                cout << i << "\t";
+                statements[i]->printRegs(mapping);
             }
+            cout << endl;
         }
-        
-    
     }    
-     
     
-    //dealokacije
-    for(unsigned i=0;i<naredbe.size();i++)
-        delete naredbe[i];
-    registri.erase(registri.begin(),registri.end());
-        
-    
+    for(auto stmt : statements)
+        delete stmt;
     
     exit(EXIT_SUCCESS);
 }

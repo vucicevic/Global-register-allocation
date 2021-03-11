@@ -10,7 +10,7 @@
     using namespace std;
 
     
-    #include "naredba.hpp"
+    #include "statement.hpp"
     #include "parser.tab.hpp"
 %}
 
@@ -21,7 +21,7 @@
 ">"             { yylval.s = new string(yytext); return relop_token;    }
 "<"             { yylval.s = new string(yytext); return relop_token;    }
 
-":="            { return dodela_token;                                  }
+":="            { return assign_token;                                  }
 
 "ifFalse"       { return if_token;                                      }
 
@@ -35,13 +35,13 @@
                                 
 [a-z][a-z]+     { yylval.s = new string(yytext); return function_token; }
                                 
-(-)?[0-9]+      { yylval.d = atoi(yytext); return num_token;            }
+(-)?[0-9]+      { yylval.i = atoi(yytext); return num_token;            }
                                 
-[-+*/()\n]      {   return *yytext; }   
+[-+*/()\n]      { return *yytext; }   
 
 [ \t]           {   }
 
-.               { cerr<<"Leksička greška. Neprepoznat karakter : "<<*yytext<<endl; exit(EXIT_FAILURE); }
+.               { cerr << "Lex error. Unknown char : " << *yytext <<endl; exit(EXIT_FAILURE); }
 
 %%
 

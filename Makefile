@@ -1,11 +1,17 @@
-GRA: parser.o  lex.yy.o tip.o izraz.o naredba.o	funkcije.o
-	g++ -std=c++14 -o $@ $^ -Wall -Wextra 
+PROGRAM	 = GRA
+CXX 	 = g++
+CXXFLAGS = -std=c++17 -Wall -Wextra
+
+
+
+$(PROGRAM): parser.o  lex.yy.o term.o expression.o statement.o functions.o
+	$(CXX) $(CXXFLAGS) -o $@ $^  
 	
-parser.o : parser.tab.cpp 
-	g++ -std=c++14 -c -o $@ $< -Wall -Wextra
+parser.o : parser.tab.cpp parser.tab.hpp statement.hpp
+	$(CXX) $(CXXFLAGS) -c -o $@ $< 
 	
-lex.yy.o : lex.yy.c 
-	g++ -std=c++14 -c -o $@ $< -Wall -Wextra
+lex.yy.o : lex.yy.c parser.tab.hpp statement.hpp
+	$(CXX) $(CXXFLAGS) -c -o $@ $< 
 	
 lex.yy.c : lexer.lex 
 	flex $<
@@ -13,20 +19,20 @@ lex.yy.c : lexer.lex
 parser.tab.cpp parser.tab.hpp : parser.ypp
 	bison -d -v $<
 
-naredba.o : naredba.cpp naredba.hpp
-	g++ -std=c++14 -c -o $@ $< -Wall -Wextra -Wno-sign-compare
+statement.o : statement.cpp statement.hpp expression.hpp
+	$(CXX) $(CXXFLAGS) -c -o $@ $< 
 	
-izraz.o : izraz.cpp izraz.hpp
-	g++ -std=c++14 -c -o $@ $< -Wall -Wextra
+expression.o : expression.cpp expression.hpp term.hpp
+	$(CXX) $(CXXFLAGS) -c -o $@ $<  
 	
-tip.o :	tip.cpp tip.hpp
-	g++ -std=c++14 -c -o $@ $< -Wall -Wextra
+term.o :term.cpp term.hpp
+	$(CXX) $(CXXFLAGS) -c -o $@ $<  
 
-funkcije.o : funkcije.cpp
-	g++ -std=c++14 -c -o $@ $< -Wall -Wextra
+functions.o : functions.cpp
+	$(CXX) $(CXXFLAGS) -c -o $@ $<  
 
 .PHONY : clean
 
 clean :
-	rm lex.yy.c *.o *.tab.* *.output GRA
+	rm lex.yy.c *.o *.tab.* *.output $(PROGRAM)
 	
