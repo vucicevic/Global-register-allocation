@@ -1,0 +1,6 @@
+0   a := 0
+1   b := a + 1
+2   c := c + b
+3   a := b * 2
+4   ifFalse a < 9 goto 1
+5   return c
