@@ -12,6 +12,13 @@ Output:
 
 Same TAC where variables are represented as actual registers
  
+ 
+### Requirements
+
+- C++ compiler 
+- Flex
+- Bison
+- Make
 
 ### Build and run
 
